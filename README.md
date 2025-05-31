@@ -56,6 +56,8 @@ Ensure you have the following tools installed and configured:
 - ACM Certificate for your domain (e.g., \`bin.reborncloud.online\`)
 - Route 53 Hosted Zone for your domain
 
+ Important Note : Follow the steps below in order, and be sure to replace all placeholders — such as domain name, AWS account ID, region, cluster name, and tags — with your desired actual values throughout
+
 ---
 
 ## Step 1: Create the EKS Cluster
