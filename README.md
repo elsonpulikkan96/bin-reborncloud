@@ -22,7 +22,9 @@ This repository provides a ready-to-deploy configuration of [PrivateBin](https:/
 
 Docker Image:
 
+\`\`\`
 https://github.com/PrivateBin/docker-nginx-fpm-alpine
+\`\`\`
 
 This setup runs a Pod with **Nginx** and **PHP-FPM**, integrates DNS challenge, ALB (ports 80/443), and uses Amazon EBS CSI driver for persistent storage.
 
@@ -265,3 +267,5 @@ https://bin.reborncloud.online
 - Amazon EBS CSI Driver: https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html
 - PrivateBin: https://privatebin.info/
 - eksctl IAM Policies: https://eksctl.io/usage/iam-policies/
+
+---
