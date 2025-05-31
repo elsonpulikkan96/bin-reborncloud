@@ -236,7 +236,7 @@ kubectl apply -f bin-privatebin-ingress.yaml
 
 ## Step 9: Validate the Deployment
 
-\`\`\`bash
+\`\`\`
 kubectl get nodes -o wide
 kubectl logs -n privatebin -l app=privatebin
 kubectl get ingress privatebin-ingress -n privatebin -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
