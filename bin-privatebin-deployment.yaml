@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: privatebin
+  namespace: privatebin
+  labels:
+    app: privatebin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: privatebin
+  template:
+    metadata:
+      labels:
+        app: privatebin
+    spec:
+      securityContext:
+        fsGroup: 1000   # <--- Ensures write access to /srv/data
+      containers:
+        - name: privatebin
+          image: privatebin/nginx-fpm-alpine:1.4.0
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: /srv/data
+              name: data-volume
+          # Optional: Health checks
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          # Optional: Resource requests/limits
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 512Mi
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: privatebin-pvc
+
