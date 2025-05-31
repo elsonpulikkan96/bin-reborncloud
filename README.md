@@ -1,28 +1,36 @@
-# A simple but Ready-to-test AWS EKS PrivateBin Deployment
+# AWS EKS PrivateBin Deployment (Ready-to-Test)
 
-A simple but Ready-to-test AWS EKS PrivateBin App
+This repository provides a ready-to-deploy configuration of [PrivateBin](https://privatebin.info/) on AWS EKS using the following AWS services:
 
-
-PrivateBin is a minimalist PHP-Based, open source online pastebin which provides a secure way to share text documents, code samples, logs etc  where the server has zero knowledge of pasted data. Data is encrypted and decrypted in the browser using 256-bit AES Encryption. Also it used HTTPS to ensure security and help share passwords other important Data privately and securely.
-
-Main Features:
-
-1: Zero-Knowledge Encryption: All data is encrypted and decrypted in the browser, ensuring the server has no knowledge of the content.
-2: Password Protection: Users can set a password to further protect their pastes, preventing unauthorized access.
-3: Expiration Options: Choose from various expiration times, including "forever" and "burn after reading" options.
-4: File Uploads: Upload files with image, media, and PDF previews (disabled by default, size limit adjustable).
-
-
-There is is the all-in-one image (Docker Hub / GitHub) that can be used with any storage backend 
-
-https://github.com/PrivateBin/docker-nginx-fpm-alpine
-
-Behind the scenes, There is a Pod which runs Nginx and php-fpm contaieners with DNS challenbeg + AWS ACM  + Route53 configuration +AWS ALB controller 80 443 + AWS CSI-EBS controlerr PVC as Stroage backend
+- AWS ALB Ingress Controller
+- Amazon EBS CSI Driver
+- Route 53
+- ACM (SSL Certificates)
 
 ---
 
-## Directory Structure
+## What is PrivateBin?
 
+**PrivateBin** is a minimalist, open-source pastebin written in PHP. It allows users to share code, logs, or text securely with **zero server-side knowledge** of the content. All data is **end-to-end encrypted** in the browser using **256-bit AES**.
+
+### Key Features
+
+- **Zero-Knowledge Encryption**: Data is encrypted/decrypted in the browser; the server cannot read it.
+- **Password Protection**: Optional password to restrict access.
+- **Expiration Options**: Choose when pastes expire (e.g., burn after reading).
+- **Optional File Uploads**: Supports image/media/PDF preview (disabled by default).
+
+Docker Image:
+
+https://github.com/PrivateBin/docker-nginx-fpm-alpine
+
+This setup runs a Pod with **Nginx** and **PHP-FPM**, integrates DNS challenge, ALB (ports 80/443), and uses Amazon EBS CSI driver for persistent storage.
+
+---
+
+## Project Structure
+
+\`\`\`
 /root/bin-reborncloud/
 ├── README.md
 ├── alb-csi-policy.json
@@ -32,109 +40,133 @@ Behind the scenes, There is a Pod which runs Nginx and php-fpm contaieners with 
 ├── bin-privatebin-ingress.yaml
 ├── bin-privatebin-namespace.yaml
 ├── bin-privatebin-pvc.yaml
-└── bin-privatebin-service.yaml
+├── bin-privatebin-service.yaml
+\`\`\`
 
 ---
 
 ## Prerequisites
 
-- AWS CLI, kubectl, eksctl, and helm installed and configured
-- AWS account with permissions to create EKS/IAM resources
-- ACM certificate for your domain (e.g., bin.reborncloud.online)
-- Route53 hosted zone for your domain
+Ensure you have the following tools installed and configured:
+
+- AWS CLI
+- \`kubectl\`, \`eksctl\`, and \`helm\`
+- AWS account with EKS/IAM permissions
+- ACM Certificate for your domain (e.g., \`bin.reborncloud.online\`)
+- Route 53 Hosted Zone for your domain
 
 ---
 
-## 1. Cluster Creation
+## Step 1: Create the EKS Cluster
 
+\`\`\`bash
 eksctl create cluster -f bin-privatebin-eks-cluster-config.yaml
+\`\`\`
 
 ---
 
-Find your VPC ID:
+## Step 2: Configure VPC Subnets for Load Balancers
 
+### Get VPC ID:
+
+\`\`\`bash
 aws eks describe-cluster \
   --name "<CLUSTER_NAME>" \
   --query "cluster.resourcesVpcConfig.vpcId" \
   --output text
+\`\`\`
 
-List public subnets (with IGW):
+### Get and Tag Public Subnets:
 
+\`\`\`bash
 aws ec2 describe-route-tables \
   --filters "Name=vpc-id,Values=<VPC_ID>" \
-  --output json | jq -r '
-    .RouteTables[]
-    | select(.Routes[]? | (.GatewayId? | type == "string" and startswith("igw-")))
-    | .Associations[]?.SubnetId' | sort | uniq
+  --output json | jq -r \
+  '.RouteTables[] | select(.Routes[]?.GatewayId? | startswith("igw-")) | .Associations[]?.SubnetId' | sort | uniq
 
-Tag these as public:
-
-aws ec2 create-tags --resources <public-subnet-ids> \
+aws ec2 create-tags --resources <SUBNET_IDS> \
   --tags Key=kubernetes.io/cluster/<CLUSTER_NAME>,Value=owned \
          Key=kubernetes.io/role/elb,Value=1
+\`\`\`
 
-List private subnets (no IGW):
+### Get and Tag Private Subnets:
 
+\`\`\`bash
 aws ec2 describe-route-tables \
   --filters "Name=vpc-id,Values=<VPC_ID>" \
-  --output json | jq -r '
-    .RouteTables[]
-    | select(all(.Routes[]?; (.GatewayId? | type != "string" or (startswith("igw-") | not))))
-    | .Associations[]?.SubnetId' | sort | uniq
+  --output json | jq -r \
+  '.RouteTables[] | select(all(.Routes[]?; (.GatewayId? | type != "string" or (startswith("igw-") | not)))) | .Associations[]?.SubnetId' | sort | uniq
 
-Tag these as private:
-
-aws ec2 create-tags --resources <private-subnet-ids> \
+aws ec2 create-tags --resources <SUBNET_IDS> \
   --tags Key=kubernetes.io/cluster/<CLUSTER_NAME>,Value=owned \
          Key=kubernetes.io/role/internal-elb,Value=1
+\`\`\`
 
+---
 
-Open Security Group Ports 80/443 for ALB
+## Step 3: Open Ports 80/443 on Security Groups
 
-Find security groups:
+### Get Security Group ID:
 
+\`\`\`bash
 aws ec2 describe-security-groups \
   --filters "Name=tag:kubernetes.io/cluster/<CLUSTER_NAME>,Values=owned" \
   --query "SecurityGroups[*].GroupId" \
   --output text
+\`\`\`
 
+### Authorize HTTP/HTTPS Access:
 
-Allow inbound HTTP/HTTPS:
-
+\`\`\`bash
 aws ec2 authorize-security-group-ingress \
-  --group-id <sg-id> \
+  --group-id <GROUP_ID> \
   --protocol tcp --port 80 --cidr 0.0.0.0/0
 
 aws ec2 authorize-security-group-ingress \
-  --group-id <sg-id> \
+  --group-id <GROUP_ID> \
   --protocol tcp --port 443 --cidr 0.0.0.0/0
+\`\`\`
 
 ---
 
-## 2. Enable OIDC for IRSA
+## Step 4: Enable OIDC for IAM Roles
 
-eksctl utils associate-iam-oidc-provider --cluster privatebin-cluster --approve
-
----
-
-## 3. IAM Policies
-
-a. Download & Create ALB Policy
-
-curl -o policies/alb-csi-policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.1/docs/install/iam_policy.json
-
-aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://policies/alb-csi-policy.json
-
-b. EBS CSI Policy
-
-Use AWS managed policy: arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+\`\`\`bash
+eksctl utils associate-iam-oidc-provider \
+  --cluster privatebin-cluster \
+  --approve
+\`\`\`
 
 ---
 
-## 4. Create IAM Service Accounts
+## Step 5: Create IAM Policies
 
-a. ALB Ingress Controller
+### a. ALB Policy
 
+\`\`\`bash
+curl -o policies/alb-csi-policy.json \
+  https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.1/docs/install/iam_policy.json
+
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://policies/alb-csi-policy.json
+\`\`\`
+
+### b. EBS CSI Policy
+
+Use the following AWS-managed policy:
+
+\`\`\`
+arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
+\`\`\`
+
+---
+
+## Step 6: Create IAM Service Accounts
+
+### a. ALB Ingress Controller
+
+\`\`\`bash
 eksctl create iamserviceaccount \
   --cluster=privatebin-cluster \
   --namespace=kube-system \
@@ -142,26 +174,30 @@ eksctl create iamserviceaccount \
   --attach-policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/AWSLoadBalancerControllerIAMPolicy \
   --override-existing-serviceaccounts \
   --approve
+\`\`\`
 
-b. EBS CSI Driver
+### b. EBS CSI Driver
 
+\`\`\`bash
 eksctl create iamserviceaccount \
   --cluster=privatebin-cluster \
   --namespace=kube-system \
   --name=ebs-csi-controller-sa \
   --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
   --approve
+\`\`\`
 
 ---
 
-## 5. Install Controllers
+## Step 7: Install Controllers
 
-a. AWS Load Balancer Controller
+### a. AWS Load Balancer Controller
 
-kubectl apply -f https://github.com/aws/eks-charts/raw/master/stable/aws-load-balancer-controller/crds/crds.yaml
+\`\`\`bash
+kubectl apply -f \
+  https://github.com/aws/eks-charts/raw/master/stable/aws-load-balancer-controller/crds/crds.yaml
 
 helm repo add eks https://aws.github.io/eks-charts
-
 helm repo update
 
 helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
@@ -169,57 +205,63 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set clusterName=<CLUSTER_NAME> \
   --set serviceAccount.create=false \
   --set serviceAccount.name=aws-load-balancer-controller \
-  --set region=<REGION> \
+  --set region=<AWS_REGION> \
   --set vpcId=$(aws eks describe-cluster --name <CLUSTER_NAME> --query "cluster.resourcesVpcConfig.vpcId" --output text) \
   --set image.repository=public.ecr.aws/eks/aws-load-balancer-controller
+\`\`\`
 
-b. EBS CSI Driver
+### b. EBS CSI Driver
 
-kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/ecr/?ref=release-1.30"
+\`\`\`bash
+kubectl apply -k \
+  "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/ecr/?ref=release-1.30"
+\`\`\`
 
 ---
 
-## 6. Deploy PrivateBin Resources
+## Step 8: Deploy PrivateBin Resources
 
+\`\`\`bash
 kubectl apply -f bin-privatebin-namespace.yaml
 kubectl apply -f bin-privatebin-ebs-storageclass.yaml
 kubectl apply -f bin-privatebin-pvc.yaml
 kubectl apply -f bin-privatebin-deployment.yaml
 kubectl apply -f bin-privatebin-service.yaml
 kubectl apply -f bin-privatebin-ingress.yaml
+\`\`\`
 
 ---
 
-## 7. Validation & Troubleshooting
+## Step 9: Validate the Deployment
 
+\`\`\`bash
 kubectl get nodes -o wide
-
 kubectl logs -n privatebin -l app=privatebin
-
 kubectl get ingress privatebin-ingress -n privatebin -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-
 curl -I https://bin.reborncloud.online
+\`\`\`
 
-
-## 8. Configure DNS
-
-In Route53, create a CNAME or Alias record for your domain (e.g., bin.reborncloud.online) pointing to the ALB DNS name.
-
-Now you have a production-ready, automated PrivateBin deployment on AWS EKS with ALB, EBS, ACM, and Route53 services integrated.
-
-Resolve your URL on a Browser : https://bin.reborncloud.online
 ---
 
-## References for Troublshooting Common Pitfalls
+## Step 10: Configure DNS
+
+In **Route 53**, create a **CNAME** or **Alias Record** pointing your domain (e.g., \`bin.reborncloud.online\`) to the ALB DNS name.
+
+---
+
+## Final Result
+
+Your PrivateBin deployment should now be accessible at:
+
+\`\`\`
+https://bin.reborncloud.online
+\`\`\`
+
+---
+
+## References & Troubleshooting
 
 - AWS Load Balancer Controller: https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.6/deploy/installation/
 - Amazon EBS CSI Driver: https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html
 - PrivateBin: https://privatebin.info/
 - eksctl IAM Policies: https://eksctl.io/usage/iam-policies/
-
----
-
-## License
-
-MIT
----
