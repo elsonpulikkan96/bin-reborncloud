@@ -223,7 +223,7 @@ kubectl apply -k \
 
 ## Step 8: Deploy PrivateBin Resources
 
-\`\`\`bash
+```sh
 kubectl apply -f bin-privatebin-namespace.yaml
 kubectl apply -f bin-privatebin-ebs-storageclass.yaml
 kubectl apply -f bin-privatebin-pvc.yaml
@@ -236,13 +236,12 @@ kubectl apply -f bin-privatebin-ingress.yaml
 
 ## Step 9: Validate the Deployment
 
-\`\`\`
+```sh
 kubectl get nodes -o wide
 kubectl logs -n privatebin -l app=privatebin
 kubectl get ingress privatebin-ingress -n privatebin -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 curl -I https://bin.reborncloud.online
-\`\`\`
-
+```
 ---
 
 ## Step 10: Configure DNS
@@ -255,10 +254,9 @@ In **Route 53**, create a **CNAME** or **Alias Record** pointing your domain (e.
 
 Your PrivateBin deployment should now be accessible at:
 
-\`\`\`
+```sh
 https://bin.reborncloud.online
-\`\`\`
-
+```
 ---
 
 ## References & Troubleshooting
