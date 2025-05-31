@@ -22,9 +22,9 @@ This repository provides a ready-to-deploy configuration of [PrivateBin](https:/
 
 Docker Image:
 
-\`\`\`
+```sh
 https://github.com/PrivateBin/docker-nginx-fpm-alpine
-\`\`\`
+```
 
 This setup runs a Pod with **Nginx** and **PHP-FPM**, integrates DNS challenge, ALB (ports 80/443), and uses Amazon EBS CSI driver for persistent storage.
 
@@ -32,7 +32,7 @@ This setup runs a Pod with **Nginx** and **PHP-FPM**, integrates DNS challenge, 
 
 ## Project Structure
 
-\`\`\`
+```sh
 /root/bin-reborncloud/
 ├── README.md
 ├── alb-csi-policy.json
@@ -43,8 +43,7 @@ This setup runs a Pod with **Nginx** and **PHP-FPM**, integrates DNS challenge, 
 ├── bin-privatebin-namespace.yaml
 ├── bin-privatebin-pvc.yaml
 ├── bin-privatebin-service.yaml
-\`\`\`
-
+```
 ---
 
 ## Prerequisites
@@ -61,9 +60,9 @@ Ensure you have the following tools installed and configured:
 
 ## Step 1: Create the EKS Cluster
 
-\`\`\`bash
+```sh
 eksctl create cluster -f bin-privatebin-eks-cluster-config.yaml
-\`\`\`
+```
 
 ---
 
@@ -71,16 +70,16 @@ eksctl create cluster -f bin-privatebin-eks-cluster-config.yaml
 
 ### Get VPC ID:
 
-\`\`\`bash
+```sh
 aws eks describe-cluster \
   --name "<CLUSTER_NAME>" \
   --query "cluster.resourcesVpcConfig.vpcId" \
   --output text
-\`\`\`
+```
 
 ### Get and Tag Public Subnets:
 
-\`\`\`bash
+```sh
 aws ec2 describe-route-tables \
   --filters "Name=vpc-id,Values=<VPC_ID>" \
   --output json | jq -r \
@@ -89,11 +88,11 @@ aws ec2 describe-route-tables \
 aws ec2 create-tags --resources <SUBNET_IDS> \
   --tags Key=kubernetes.io/cluster/<CLUSTER_NAME>,Value=owned \
          Key=kubernetes.io/role/elb,Value=1
-\`\`\`
+```
 
 ### Get and Tag Private Subnets:
 
-\`\`\`bash
+```sh
 aws ec2 describe-route-tables \
   --filters "Name=vpc-id,Values=<VPC_ID>" \
   --output json | jq -r \
@@ -102,7 +101,7 @@ aws ec2 describe-route-tables \
 aws ec2 create-tags --resources <SUBNET_IDS> \
   --tags Key=kubernetes.io/cluster/<CLUSTER_NAME>,Value=owned \
          Key=kubernetes.io/role/internal-elb,Value=1
-\`\`\`
+```
 
 ---
 
@@ -110,16 +109,16 @@ aws ec2 create-tags --resources <SUBNET_IDS> \
 
 ### Get Security Group ID:
 
-\`\`\`bash
+```sh
 aws ec2 describe-security-groups \
   --filters "Name=tag:kubernetes.io/cluster/<CLUSTER_NAME>,Values=owned" \
   --query "SecurityGroups[*].GroupId" \
   --output text
-\`\`\`
+```
 
 ### Authorize HTTP/HTTPS Access:
 
-\`\`\`bash
+```sh
 aws ec2 authorize-security-group-ingress \
   --group-id <GROUP_ID> \
   --protocol tcp --port 80 --cidr 0.0.0.0/0
@@ -127,17 +126,17 @@ aws ec2 authorize-security-group-ingress \
 aws ec2 authorize-security-group-ingress \
   --group-id <GROUP_ID> \
   --protocol tcp --port 443 --cidr 0.0.0.0/0
-\`\`\`
+```
 
 ---
 
 ## Step 4: Enable OIDC for IAM Roles
 
-\`\`\`bash
+```sh
 eksctl utils associate-iam-oidc-provider \
   --cluster privatebin-cluster \
   --approve
-\`\`\`
+```
 
 ---
 
@@ -145,22 +144,22 @@ eksctl utils associate-iam-oidc-provider \
 
 ### a. ALB Policy
 
-\`\`\`bash
+```sh
 curl -o policies/alb-csi-policy.json \
   https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.1/docs/install/iam_policy.json
 
 aws iam create-policy \
   --policy-name AWSLoadBalancerControllerIAMPolicy \
   --policy-document file://policies/alb-csi-policy.json
-\`\`\`
+```
 
 ### b. EBS CSI Policy
 
 Use the following AWS-managed policy:
 
-\`\`\`
+```sh
 arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
-\`\`\`
+```
 
 ---
 
@@ -168,7 +167,7 @@ arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy
 
 ### a. ALB Ingress Controller
 
-\`\`\`bash
+```sh
 eksctl create iamserviceaccount \
   --cluster=privatebin-cluster \
   --namespace=kube-system \
@@ -176,18 +175,18 @@ eksctl create iamserviceaccount \
   --attach-policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/AWSLoadBalancerControllerIAMPolicy \
   --override-existing-serviceaccounts \
   --approve
-\`\`\`
+```
 
 ### b. EBS CSI Driver
 
-\`\`\`bash
+```sh
 eksctl create iamserviceaccount \
   --cluster=privatebin-cluster \
   --namespace=kube-system \
   --name=ebs-csi-controller-sa \
   --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
   --approve
-\`\`\`
+```
 
 ---
 
@@ -195,11 +194,12 @@ eksctl create iamserviceaccount \
 
 ### a. AWS Load Balancer Controller
 
-\`\`\`bash
+```sh
 kubectl apply -f \
   https://github.com/aws/eks-charts/raw/master/stable/aws-load-balancer-controller/crds/crds.yaml
 
 helm repo add eks https://aws.github.io/eks-charts
+
 helm repo update
 
 helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
@@ -210,15 +210,14 @@ helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set region=<AWS_REGION> \
   --set vpcId=$(aws eks describe-cluster --name <CLUSTER_NAME> --query "cluster.resourcesVpcConfig.vpcId" --output text) \
   --set image.repository=public.ecr.aws/eks/aws-load-balancer-controller
-\`\`\`
+```
 
 ### b. EBS CSI Driver
 
-\`\`\`bash
+```sh
 kubectl apply -k \
   "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/ecr/?ref=release-1.30"
-\`\`\`
-
+```
 ---
 
 ## Step 8: Deploy PrivateBin Resources
@@ -230,7 +229,7 @@ kubectl apply -f bin-privatebin-pvc.yaml
 kubectl apply -f bin-privatebin-deployment.yaml
 kubectl apply -f bin-privatebin-service.yaml
 kubectl apply -f bin-privatebin-ingress.yaml
-\`\`\`
+```
 
 ---
 
