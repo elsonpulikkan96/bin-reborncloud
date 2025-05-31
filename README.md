@@ -237,6 +237,7 @@ kubectl apply -f bin-privatebin-ingress.yaml
 
 ```sh
 kubectl get nodes -o wide
+kubectl get ns,po,pvc,svc,ingress -n privatebin
 kubectl logs -n privatebin -l app=privatebin
 kubectl get ingress privatebin-ingress -n privatebin -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 curl -I https://bin.reborncloud.online
